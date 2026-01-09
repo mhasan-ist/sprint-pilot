@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useSprintStore } from './store';
 import { Sidebar } from './components/Sidebar';
@@ -142,7 +143,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Dynamic View Rendering */}
-        <div className="flex-1 relative overflow-hidden bg-slate-50">
+        <div className="flex-1 relative flex flex-col overflow-hidden bg-slate-50">
           {store.viewMode === ViewMode.DASHBOARD && <GlobalDashboard store={store} />}
           {store.viewMode === ViewMode.HELICOPTER && <HelicopterView store={store} />}
           {store.viewMode === ViewMode.GANTT && <GanttView store={store} />}
