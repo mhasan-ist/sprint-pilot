@@ -8,7 +8,7 @@ import { SquadModal } from './SquadModal';
 import { StoryModal } from './StoryModal';
 
 export const HelicopterView: React.FC<{ store: SprintStore }> = ({ store }) => {
-  const { sprints, squads, sprintSquads, assignments, setSelectedSprintSquadId, setViewMode, assignStory, updateSprintSquadMembers } = store;
+  const { sprints, squads, sprintSquads, assignments, setSelectedSprintSquadId, setViewMode, assignStory, updateSprintSquadMembers, addNewSprint, deleteLastSprint, updateGlobalCapacityFactor } = store;
 
   const [squadToEdit, setSquadToEdit] = useState<{ ss: SprintSquad, squadName: string, sprintName: string } | null>(null);
   const [editingStory, setEditingStory] = useState<UserStory | null>(null);
@@ -42,30 +42,62 @@ export const HelicopterView: React.FC<{ store: SprintStore }> = ({ store }) => {
       return story?.dependencies.includes(storyId) || false;
   };
 
+  const currentBuffer = sprints[0]?.capacityFactor || 0.8;
+
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full bg-slate-50" onClick={() => setSelectedTraceStoryId(null)}>
       {/* Header Section */}
       <div className="p-6 shrink-0 flex items-center justify-between bg-white border-b border-slate-200 z-30 shadow-sm">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Helicopter Overview</h2>
-          <p className="text-slate-500 text-sm font-medium">Strategic planning and capacity realism at a glance.</p>
+        <div className="flex gap-8 items-center">
+            <div>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Helicopter Overview</h2>
+              <p className="text-slate-500 text-sm font-medium">Strategic planning and capacity realism.</p>
+            </div>
+            
+            <div className="h-10 w-px bg-slate-200"></div>
+
+            <div className="flex items-center gap-6">
+                <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Global Buffer</span>
+                    <div className="flex items-center gap-3">
+                        <input 
+                            type="range" min="0.5" max="1" step="0.05" 
+                            value={currentBuffer} 
+                            onChange={(e) => updateGlobalCapacityFactor(parseFloat(e.target.value))}
+                            className="w-24 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                        />
+                        <span className="text-xs font-black text-indigo-600">{(currentBuffer * 100).toFixed(0)}%</span>
+                    </div>
+                </div>
+                
+                <div className="flex gap-2">
+                    <button 
+                        onClick={deleteLastSprint}
+                        className="p-2 border border-slate-200 rounded-xl hover:bg-red-50 hover:text-red-500 transition-all"
+                        title="Remove Last Sprint"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
+                    </button>
+                    <button 
+                        onClick={addNewSprint}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                        Add Sprint
+                    </button>
+                </div>
+            </div>
         </div>
-        <div className="flex gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-lg text-[9px] font-black text-indigo-600 uppercase tracking-widest animate-pulse">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                Dependency Tracer Active
-            </div>
-            <div className="flex gap-2">
-                <Legend color="emerald" label="Healthy" />
-                <Legend color="amber" label="Warning" />
-                <Legend color="red" label="Overload" />
-            </div>
+        
+        <div className="flex gap-2">
+            <Legend color="emerald" label="Healthy" />
+            <Legend color="amber" label="Warning" />
+            <Legend color="red" label="Overload" />
         </div>
       </div>
 
       {/* Main Scrollable Area */}
       <div className="flex-1 overflow-auto custom-scrollbar relative p-6">
-        {/* We use width: max-content to ensure the grid defines the scrollable range */}
         <div 
           className="grid gap-4" 
           style={{ 
@@ -180,9 +212,9 @@ export const HelicopterView: React.FC<{ store: SprintStore }> = ({ store }) => {
 
                         {/* Role Micro-Bars */}
                         <div className="mt-auto pt-3 border-t border-black/5 flex gap-2">
-                            <RoleMiniMeter label="BE" val={metrics.utilization.backend} />
-                            <RoleMiniMeter label="MOB" val={(metrics.utilization.android + metrics.utilization.ios) / 2} />
-                            <RoleMiniMeter label="QA" val={metrics.utilization.qa} />
+                            <MiniRoleProgress label="BE" val={metrics.utilization.backend} />
+                            <MiniRoleProgress label="MOB" val={(metrics.utilization.android + metrics.utilization.ios) / 2} />
+                            <MiniRoleProgress label="QA" val={metrics.utilization.qa} />
                         </div>
                         </div>
                     );
@@ -223,26 +255,23 @@ export const HelicopterView: React.FC<{ store: SprintStore }> = ({ store }) => {
   );
 };
 
+const MiniRoleProgress = ({ label, val }: { label: string, val: number }) => (
+    <div className="flex-1">
+        <div className="flex justify-between text-[7px] font-black text-slate-400 mb-0.5">
+            <span>{label}</span>
+            <span>{val.toFixed(0)}%</span>
+        </div>
+        <div className="h-1 bg-slate-200/50 rounded-full overflow-hidden border border-black/5">
+            <div 
+                className={`h-full rounded-full ${val > 100 ? 'bg-red-500' : val > 90 ? 'bg-amber-400' : 'bg-indigo-500'}`}
+                style={{ width: `${Math.min(val, 100)}%` }}
+            />
+        </div>
+    </div>
+);
+
 const Legend = ({ color, label }: { color: string, label: string }) => (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-500">
         <div className={`w-2 h-2 rounded-full bg-${color}-500`}></div> <span>{label}</span>
     </div>
 );
-
-const RoleMiniMeter = ({ label, val }: { label: string, val: number }) => {
-    const isOver = val > 100;
-    return (
-        <div className="flex-1 flex flex-col gap-1">
-            <div className="flex justify-between text-[7px] font-black text-slate-400 uppercase tracking-tighter">
-                <span>{label}</span>
-                <span className={isOver ? 'text-red-500' : 'text-slate-500'}>{val.toFixed(0)}%</span>
-            </div>
-            <div className="h-1 w-full bg-slate-200/50 rounded-full overflow-hidden border border-black/5">
-                <div 
-                    className={`h-full rounded-full transition-all duration-500 ${isOver ? 'bg-red-500' : val > 90 ? 'bg-amber-400' : 'bg-indigo-500'}`} 
-                    style={{ width: `${Math.min(val, 100)}%` }}
-                />
-            </div>
-        </div>
-    );
-};

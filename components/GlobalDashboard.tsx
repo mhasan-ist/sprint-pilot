@@ -1,11 +1,13 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { SprintStore } from '../store';
-import { calculateSprintSquadMetrics, validateFullPlan } from '../engine';
+import { calculateSprintSquadMetrics, validateFullPlan, getWorkingDays } from '../engine';
 import { ViewMode } from '../types';
 
 export const GlobalDashboard: React.FC<{ store: SprintStore }> = ({ store }) => {
   const { projects, storeStories, sprints, sprintSquads, storeAssignments, setActiveProjectId, setViewMode } = store;
+  const [simSquadCount, setSimSquadCount] = useState(4);
+  const [simBuffer, setSimBuffer] = useState(0.8);
 
   const globalMetrics = useMemo(() => {
     let totalStories = storeStories.length;
@@ -14,7 +16,8 @@ export const GlobalDashboard: React.FC<{ store: SprintStore }> = ({ store }) => 
     const roleLoads = { backend: 0, android: 0, ios: 0, qa: 0, qaAutomation: 0 };
 
     storeStories.forEach(s => {
-      totalLoad += (Object.values(s.mandaysByRole) as number[]).reduce((a, b) => a + b, 0);
+      const storyTotal = (Object.values(s.mandaysByRole) as number[]).reduce((a, b) => a + b, 0);
+      totalLoad += storyTotal;
       roleLoads.backend += s.mandaysByRole.backend;
       roleLoads.android += s.mandaysByRole.android;
       roleLoads.ios += s.mandaysByRole.ios;
@@ -25,13 +28,13 @@ export const GlobalDashboard: React.FC<{ store: SprintStore }> = ({ store }) => 
     return { totalStories, totalAssignments, totalLoad, roleLoads };
   }, [storeStories, storeAssignments]);
 
-  const forecastData = useMemo(() => {
-    // Unique Sprints and Squads across all projects
-    const allSprintNames = Array.from(new Set(sprints.map(s => s.name))).sort();
-    const allSquadNames = Array.from(new Set(store.squads.map(sq => sq.id))).sort();
-
-    return { allSprintNames, allSquadNames };
-  }, [sprints, store.squads]);
+  const projection = useMemo(() => {
+    // Basic Simulation: Total Mandays / (Squads * DaysPerSprint * Buffer * RolesPerSquad)
+    // Assuming standard squad: 2 BE, 2 AND, 2 IOS, 2 QA (8 people)
+    const avgSquadCapacityPerSprint = 10 * simSquadCount * simBuffer * 8; 
+    const sprintsNeeded = Math.ceil(globalMetrics.totalLoad / avgSquadCapacityPerSprint);
+    return { sprintsNeeded, capacityPerSprint: avgSquadCapacityPerSprint };
+  }, [globalMetrics.totalLoad, simSquadCount, simBuffer]);
 
   const projectDetails = useMemo(() => {
     return projects.map(p => {
@@ -69,6 +72,9 @@ export const GlobalDashboard: React.FC<{ store: SprintStore }> = ({ store }) => 
     });
   }, [projects, storeStories, sprints, sprintSquads, storeAssignments]);
 
+  const allSprintNames = useMemo(() => Array.from(new Set(sprints.map(s => s.name))).sort(), [sprints]);
+  const allSquadNames = useMemo(() => Array.from(new Set(store.squads.map(sq => sq.id))).sort(), [store.squads]);
+
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 p-8 custom-scrollbar">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -83,6 +89,38 @@ export const GlobalDashboard: React.FC<{ store: SprintStore }> = ({ store }) => 
             <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
             Real-time Forecasting Active
           </div>
+        </div>
+
+        {/* Simulation Projector */}
+        <div className="bg-white p-8 rounded-[40px] border border-indigo-100 shadow-xl shadow-indigo-50/50 flex flex-col md:flex-row gap-8 items-center border-t-4 border-t-indigo-500">
+           <div className="flex-1 space-y-6 w-full">
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-2">
+                 <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                 Sprint Requirement Projector
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                 <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex justify-between">
+                       Target Squads <span>{simSquadCount}</span>
+                    </label>
+                    <input type="range" min="1" max="10" value={simSquadCount} onChange={e => setSimSquadCount(parseInt(e.target.value))} className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
+                 </div>
+                 <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex justify-between">
+                       Capacity Factor (Buffer) <span>{(simBuffer * 100).toFixed(0)}%</span>
+                    </label>
+                    <input type="range" min="0.1" max="1" step="0.05" value={simBuffer} onChange={e => setSimBuffer(parseFloat(e.target.value))} className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
+                 </div>
+              </div>
+           </div>
+           
+           <div className="w-full md:w-px h-px md:h-24 bg-slate-100"></div>
+
+           <div className="shrink-0 text-center md:text-left px-8">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Projected Sprints Needed</span>
+              <div className="text-6xl font-black text-indigo-600 tracking-tighter mt-1">{projection.sprintsNeeded}</div>
+              <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase">At ~{projection.capacityPerSprint.toFixed(0)} mandays/sprint</p>
+           </div>
         </div>
 
         {/* KPI Row */}
@@ -113,17 +151,16 @@ export const GlobalDashboard: React.FC<{ store: SprintStore }> = ({ store }) => 
               <thead>
                 <tr>
                   <th className="p-3 text-left text-[10px] font-black text-slate-400 uppercase border-b border-slate-100 sticky left-0 bg-white z-10">Squad</th>
-                  {forecastData.allSprintNames.map(name => (
+                  {allSprintNames.map(name => (
                     <th key={name} className="p-3 text-center text-[10px] font-black text-slate-400 uppercase border-b border-slate-100 min-w-[100px]">{name}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {forecastData.allSquadNames.map(squadId => (
+                {allSquadNames.map(squadId => (
                   <tr key={squadId} className="group">
                     <td className="p-3 text-xs font-black text-slate-700 border-b border-slate-50 sticky left-0 bg-white z-10 group-hover:text-indigo-600 transition-colors">{squadId}</td>
-                    {forecastData.allSprintNames.map(sprintName => {
-                      // Find any project's sprint-squad with this name
+                    {allSprintNames.map(sprintName => {
                       const ss = sprintSquads.find(ss => {
                          const s = sprints.find(sp => sp.id === ss.sprintId);
                          return s?.name === sprintName && ss.squadId === squadId;
@@ -168,55 +205,17 @@ export const GlobalDashboard: React.FC<{ store: SprintStore }> = ({ store }) => 
                 className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm hover:border-indigo-500 hover:shadow-xl transition-all group cursor-pointer relative overflow-hidden"
               >
                 <div className={`absolute top-0 right-0 w-24 h-24 bg-${project.color}-500/5 rounded-full -mr-8 -mt-8`}></div>
-                
-                <div className="flex justify-between items-start mb-4">
-                  <div className={`w-10 h-10 rounded-xl bg-${project.color}-100 flex items-center justify-center text-${project.color}-600`}>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                  </div>
-                  {project.criticalCount > 0 && (
-                    <span className="bg-red-100 text-red-600 text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest animate-pulse">
-                      {project.criticalCount} Critical Issues
-                    </span>
-                  )}
-                </div>
-
                 <h4 className="text-lg font-black text-slate-800 tracking-tight group-hover:text-indigo-600 transition-colors">{project.name}</h4>
                 <p className="text-xs text-slate-500 font-medium mb-6 line-clamp-2 h-8">{project.description}</p>
-
-                <div className="space-y-4">
-                  <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    <span>Average Utilization</span>
-                    <span className={project.avgUtil > 100 ? 'text-red-500' : 'text-slate-700'}>{project.avgUtil.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-1000 bg-${project.color}-500`} 
-                      style={{ width: `${Math.min(project.avgUtil, 100)}%` }}
-                    />
-                  </div>
-                </div>
-
                 <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between items-center">
-                  <div className="flex -space-x-2">
-                    {[1,2,3].map(i => <div key={i} className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-400">S{i}</div>)}
-                  </div>
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                     {project.assignedCount} / {project.storyCount} Stories Assigned
                   </span>
                 </div>
               </div>
             ))}
-            
-            {/* Create New Project Call to Action */}
-            <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[32px] flex flex-col items-center justify-center p-8 hover:bg-white hover:border-indigo-400 transition-all group cursor-pointer min-h-[250px]">
-              <div className="w-12 h-12 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:text-indigo-500 group-hover:scale-110 transition-all mb-4">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-              </div>
-              <span className="text-sm font-black text-slate-400 group-hover:text-indigo-600 uppercase tracking-widest">Initialize New Stream</span>
-            </div>
           </div>
         </div>
-
       </div>
     </div>
   );
@@ -230,24 +229,9 @@ const KPICard = ({ title, value, subtitle, color }: { title: string, value: any,
   </div>
 );
 
-const RoleMeter = ({ label, val, color }: { label: string, val: number, color: string }) => (
-  <div className="space-y-3">
-    <div className="flex justify-between items-end">
-      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
-      <span className="text-xs font-black text-slate-700">{val.toFixed(0)}d</span>
-    </div>
-    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-      <div 
-        className={`h-full bg-${color}-500 transition-all duration-1000`} 
-        style={{ width: `${Math.min((val/100) * 100, 100)}%` }} 
-      />
-    </div>
-  </div>
-);
-
 const ForecastLegend = ({ label, color }: { label: string, color: string }) => (
   <div className="flex items-center gap-2">
-    <div className={`w-3 h-3 rounded-md ${color.includes('slate') ? color : color}`}></div>
+    <div className={`w-3 h-3 rounded-md bg-${color}`}></div>
     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
   </div>
 );

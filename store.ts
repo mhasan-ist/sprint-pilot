@@ -16,8 +16,8 @@ export const useSprintStore = () => {
   const [activeProjectId, setActiveProjectId] = useState<string>(INITIAL_PROJECTS[0].id);
   
   const [stories, setStories] = useState<UserStory[]>(INITIAL_STORIES);
-  const [sprints] = useState<Sprint[]>(INITIAL_SPRINTS);
-  const [squads] = useState<Squad[]>(INITIAL_SQUADS);
+  const [sprints, setSprints] = useState<Sprint[]>(INITIAL_SPRINTS);
+  const [squads, setSquads] = useState<Squad[]>(INITIAL_SQUADS);
   const [sprintSquads, setSprintSquads] = useState<SprintSquad[]>(INITIAL_SPRINT_SQUADS);
   const [assignments, setAssignments] = useState<StoryAssignment[]>(INITIAL_ASSIGNMENTS);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.DASHBOARD);
@@ -132,6 +132,59 @@ export const useSprintStore = () => {
     setSprintSquads(prev => [...prev, newSprintSquad]);
   }, []);
 
+  const addNewSprint = useCallback(() => {
+    setSprints(prev => {
+      const projectSprints = prev.filter(s => s.projectId === activeProjectId);
+      const lastSprint = projectSprints[projectSprints.length - 1];
+      const lastEndDate = new Date(lastSprint.endDate);
+      
+      const nextStartDate = new Date(lastEndDate);
+      nextStartDate.setDate(nextStartDate.getDate() + 1);
+      
+      const nextEndDate = new Date(nextStartDate);
+      nextEndDate.setDate(nextEndDate.getDate() + 14);
+
+      const newSprint: Sprint = {
+        id: `S-${Date.now()}`,
+        projectId: activeProjectId,
+        name: `Sprint ${projectSprints.length + 1}`,
+        startDate: nextStartDate.toISOString(),
+        endDate: nextEndDate.toISOString(),
+        capacityFactor: lastSprint.capacityFactor
+      };
+
+      // Also auto-initialize SprintSquads for this new sprint based on existing project squads
+      const newSprintSquads: SprintSquad[] = projectSquads.map(sq => ({
+        id: `SS-${newSprint.id}-${sq.id}`,
+        sprintId: newSprint.id,
+        squadId: sq.id,
+        membersByRole: { backend: 2, android: 2, ios: 2, qa: 2, qaAutomation: 1 }
+      }));
+
+      setSprintSquads(ss => [...ss, ...newSprintSquads]);
+      return [...prev, newSprint];
+    });
+  }, [activeProjectId, projectSquads]);
+
+  const deleteLastSprint = useCallback(() => {
+    setSprints(prev => {
+        const projectSprints = prev.filter(s => s.projectId === activeProjectId);
+        if (projectSprints.length <= 1) return prev;
+        const lastSprint = projectSprints[projectSprints.length - 1];
+        
+        // Remove assignments linked to this sprint
+        const ssIdsToRemove = sprintSquads.filter(ss => ss.sprintId === lastSprint.id).map(ss => ss.id);
+        setAssignments(as => as.filter(a => !ssIdsToRemove.includes(a.sprintSquadId)));
+        setSprintSquads(ss => ss.filter(s => s.sprintId !== lastSprint.id));
+        
+        return prev.filter(s => s.id !== lastSprint.id);
+    });
+  }, [activeProjectId, sprintSquads]);
+
+  const updateGlobalCapacityFactor = useCallback((factor: number) => {
+    setSprints(prev => prev.map(s => s.projectId === activeProjectId ? { ...s, capacityFactor: factor } : s));
+  }, [activeProjectId]);
+
   const getUnassignedStories = useMemo(() => {
     const assignedIds = assignments.map(a => a.userStoryId);
     return projectStories.filter(s => !assignedIds.includes(s.id));
@@ -152,12 +205,12 @@ export const useSprintStore = () => {
     projects,
     activeProjectId,
     activeProject,
-    stories: projectStories, // Scoped to active project
-    sprints: projectSprints, // Scoped to active project
-    squads: projectSquads,   // Scoped to active project
-    sprintSquads: projectSprintSquads, // Scoped to active project
-    storeStories: stories, // Global access if needed
-    storeAssignments: assignments, // Global access
+    stories: projectStories, 
+    sprints: projectSprints, 
+    squads: projectSquads,   
+    sprintSquads: projectSprintSquads, 
+    storeStories: stories, 
+    storeAssignments: assignments, 
     assignments,
     viewMode,
     selectedSprintSquadId,
@@ -180,6 +233,9 @@ export const useSprintStore = () => {
     getStoriesForSprintSquad,
     getAssignmentForStory,
     addSprintSquad,
+    addNewSprint,
+    deleteLastSprint,
+    updateGlobalCapacityFactor
   };
 };
 
